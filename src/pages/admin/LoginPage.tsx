@@ -3,6 +3,7 @@ import { Navigate, useLocation } from 'react-router-dom'
 import { Lock, Scissors } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 import { signIn } from '@/services/adminService'
+import { isDemoMode } from '@/lib/supabase'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Field'
 import { Alert } from '@/components/ui/Alert'
@@ -45,6 +46,11 @@ export default function LoginPage() {
           </div>
           <h1 className="font-display text-2xl font-semibold">Área do cabeleireiro</h1>
           <p className="mt-1 text-sm text-fg-muted">Entre para gerenciar sua agenda.</p>
+          {isDemoMode && (
+            <p className="mt-3 rounded-xl bg-sun-100 px-3 py-2 text-xs text-sun-700">
+              Demonstração: use qualquer e-mail e senha. Nada é salvo de verdade.
+            </p>
+          )}
         </div>
         <form onSubmit={handleSubmit} className="space-y-4" noValidate>
           <Input label="E-mail" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />

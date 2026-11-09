@@ -1,7 +1,6 @@
 import { lazy, Suspense } from 'react'
 import { BrowserRouter, HashRouter, Link, Route, Routes } from 'react-router-dom'
 import { isDemoMode } from '@/lib/supabase'
-import { DemoBanner } from '@/demo/DemoBanner'
 import BookingPage from '@/pages/BookingPage'
 import { AuthProvider } from '@/context/AuthContext'
 import { ToastProvider } from '@/context/ToastContext'
@@ -22,7 +21,6 @@ const Router = isDemoMode ? HashRouter : BrowserRouter
 export default function App() {
   return (
     <Router>
-      {isDemoMode && <DemoBanner />}
       <ToastProvider>
         <AuthProvider>
           <Suspense fallback={<PageLoader />}>

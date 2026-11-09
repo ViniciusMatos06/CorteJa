@@ -88,7 +88,6 @@ src/
     admin/            LoginPage, DashboardPage, AppointmentsPage, SchedulePage, ServicesPage.
   demo/
     mockBackend.ts    Banco simulado em memória que intercepta o fetch do supabase-js.
-    DemoBanner.tsx    Faixa "Demonstração" exibida só no modo demo.
 docs/                 Tutoriais para humanos (Supabase e Vercel).
 ```
 
@@ -243,7 +242,7 @@ Depois rode `schema.sql` duas vezes (confere idempotência) e simule papéis com
 - Ativado por `VITE_DEMO_MODE=true` (arquivo `.env.demo`, usado por `npm run build:demo`). **O build normal não inclui o código de `src/demo/`.**
 - `mockBackend.ts` substitui `window.fetch` para a origem `https://demo.supabase.local` e implementa um mini-PostgREST (filtros `eq`, `gte`, `lte`, `in`, `order`, `limit`), as RPCs e o login (qualquer e-mail e senha).
 - No demo: `HashRouter` (a página hospedada não tem rotas no servidor), sessão em memória, e links externos **sem** `target="_blank"` (o iframe isolado bloqueia nova aba; veja `externalLinkProps` em `AppointmentCard.tsx`).
-- Os agendamentos de exemplo começam com "Exemplo —" e a faixa "Demonstração" deixa claro que nada é salvo.
+- Os agendamentos de exemplo começam com "Exemplo —" e a tela de login avisa que nada é salvo. O acesso ao painel é pelo botão "Entrar como cabeleireiro" no topo da página pública.
 - Link público da demo: <https://claude.ai/artifact/MPM71hZy2oGTwMQZutV4RU> (republicado a partir de `dist-demo/`).
 
 ## 11. Antes de entregar qualquer mudança (checklist)

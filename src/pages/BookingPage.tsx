@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
-import { CheckCircle2, Home, Scissors, ShieldCheck } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { CheckCircle2, Home, LogIn, Scissors, ShieldCheck } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Card, SectionTitle } from '@/components/ui/Card'
 import { Input, Textarea } from '@/components/ui/Field'
@@ -194,6 +195,13 @@ export default function BookingPage() {
         <Scissors className="size-[18px]" />
       </span>
       <span className="font-display text-lg font-semibold tracking-tight">{businessName}</span>
+      <Link
+        to="/admin/login"
+        className="ml-auto inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-line-strong bg-surface px-3 text-xs font-semibold text-fg-soft transition-colors hover:border-brand-600 hover:text-brand-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
+      >
+        <LogIn className="size-3.5" />
+        Entrar como cabeleireiro
+      </Link>
     </div>
   )
 
@@ -398,8 +406,7 @@ function Shell({ children }: { children: React.ReactNode }) {
     <div className="min-h-dvh">
       {children}
       <footer className="pb-28 text-center text-xs text-fg-faint lg:pb-8">
-        Agendamento online · {new Date().getFullYear()}
-      </footer>
+        Agendamento online · {new Date().getFullYear()}      </footer>
     </div>
   )
 }
