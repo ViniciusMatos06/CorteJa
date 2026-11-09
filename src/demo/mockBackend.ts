@@ -6,6 +6,7 @@
 // =============================================================================
 import type { Appointment, BlockedSlot, BreakRule, BusinessSettings, Service } from '@/types'
 import { addDays, todayIn } from '@/lib/format'
+import { EMPTY_ADDRESS, UFS, formatAddress, type AddressFields } from '@/lib/address'
 
 const TZ = 'America/Sao_Paulo'
 const today = todayIn(TZ)
@@ -38,17 +39,18 @@ function nextWorkday(from: string, skip = 0) {
 }
 
 function seed() {
-  const mk = (name: string, phone: string, address: string, svc: Service, date: string, start: string, status: Appointment['status']): Appointment => ({
-    id: uid(), client_name: name, client_whatsapp: phone, client_address: address,
+  const mk = (name: string, phone: string, address: [string, string, string], svc: Service, date: string, start: string, status: Appointment['status']): Appointment => ({
+    id: uid(), client_name: name, client_whatsapp: phone,
+    ...addressColumns({ ...EMPTY_ADDRESS, cep: '30000000', street: address[0], number: address[1], neighborhood: address[2], city: 'Belo Horizonte', state: 'MG' }),
     service_id: svc.id, service_name: svc.name, service_price: svc.price,
     appointment_date: date, start_time: start, end_time: `${String(Number(start.slice(0, 2)) + 1).padStart(2, '0')}:00:00`,
     status, created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
   })
   const [masculino, feminino, infantil] = db.services
   db.appointments.push(
-    mk('Exemplo — Cliente A', '5531900000001', 'Rua Exemplo, 100 - Centro', feminino, nextWorkday(today, 0), '10:00:00', 'pending'),
-    mk('Exemplo — Cliente B', '5531900000002', 'Av. Demonstração, 250 - Savassi', masculino, nextWorkday(today, 0), '15:00:00', 'confirmed'),
-    mk('Exemplo — Cliente C', '5531900000003', 'Rua Fictícia, 42 - Lourdes', infantil, nextWorkday(today, 1), '09:00:00', 'confirmed'),
+    mk('Exemplo — Cliente A', '5531900000001', ['Rua Exemplo', '100', 'Centro'], feminino, nextWorkday(today, 0), '10:00:00', 'pending'),
+    mk('Exemplo — Cliente B', '5531900000002', ['Av. Demonstração', '250', 'Savassi'], masculino, nextWorkday(today, 0), '15:00:00', 'confirmed'),
+    mk('Exemplo — Cliente C', '5531900000003', ['Rua Fictícia', '42', 'Lourdes'], infantil, nextWorkday(today, 1), '09:00:00', 'confirmed'),
   )
   db.blocks.push({ id: uid(), block_date: nextWorkday(today, 4), start_time: null, end_time: null, reason: 'Folga (exemplo)' })
 }
@@ -89,14 +91,40 @@ class PgError extends Error {
   constructor(message: string, public code = 'P0001', public hint?: string) { super(message) }
 }
 
+/** Colunas do endereço como o banco grava (espelho de request_appointment). */
+function addressColumns(a: AddressFields) {
+  const clean = (s: string) => s.trim().replace(/\s+/g, ' ')
+  const parts = {
+    cep: a.cep.replace(/\D/g, ''), street: clean(a.street), number: clean(a.number), complement: clean(a.complement),
+    neighborhood: clean(a.neighborhood), city: clean(a.city), state: a.state.trim().toUpperCase(),
+  }
+  return {
+    client_address: formatAddress(parts),
+    address_cep: parts.cep, address_street: parts.street, address_number: parts.number,
+    address_complement: parts.complement || null, address_neighborhood: parts.neighborhood,
+    address_city: parts.city, address_state: parts.state,
+  }
+}
+
 function requestAppointment(p: Record<string, string>) {
   const name = (p.p_client_name ?? '').trim().replace(/\s+/g, ' ')
   let phone = (p.p_client_whatsapp ?? '').replace(/\D/g, '')
-  const address = (p.p_client_address ?? '').trim()
+  const addr = addressColumns({
+    cep: p.p_address_cep ?? '', street: p.p_address_street ?? '', number: p.p_address_number ?? '',
+    complement: p.p_address_complement ?? '', neighborhood: p.p_address_neighborhood ?? '',
+    city: p.p_address_city ?? '', state: p.p_address_state ?? '',
+  })
   if (name.length < 3) throw new PgError('Informe seu nome completo.')
   if (phone.length === 10 || phone.length === 11) phone = '55' + phone
   if (!/^55[1-9][0-9]{9,10}$/.test(phone)) throw new PgError('Informe um WhatsApp válido com DDD.')
-  if (address.length < 8) throw new PgError('Informe o endereço completo do atendimento.')
+  const len = (s: string | null, min: number, max: number) => (s ?? '').length >= min && (s ?? '').length <= max
+  if (!/^[0-9]{8}$/.test(addr.address_cep)) throw new PgError('Informe um CEP válido com 8 números.')
+  if (!len(addr.address_street, 2, 150)) throw new PgError('Informe a rua do atendimento.')
+  if (!len(addr.address_number, 1, 20)) throw new PgError('Informe o número (ou S/N).')
+  if (!len(addr.address_complement, 0, 80)) throw new PgError('Complemento muito longo.')
+  if (!len(addr.address_neighborhood, 2, 80)) throw new PgError('Informe o bairro.')
+  if (!len(addr.address_city, 2, 80)) throw new PgError('Informe a cidade.')
+  if (!(UFS as readonly string[]).includes(addr.address_state)) throw new PgError('Informe um estado (UF) válido.')
   const svc = db.services.find((s) => s.id === p.p_service_id && s.active)
   if (!svc) throw new PgError('O serviço selecionado não está disponível.')
   if (db.appointments.filter((a) => a.client_whatsapp === phone && a.status === 'pending' && a.appointment_date >= today).length >= 3)
@@ -105,7 +133,7 @@ function requestAppointment(p: Record<string, string>) {
   if (!slot) throw new PgError('Este horário não está mais disponível. Escolha outro horário.', 'P0001', 'SLOT_UNAVAILABLE')
   const now = new Date().toISOString()
   const a: Appointment = {
-    id: uid(), client_name: name, client_whatsapp: phone, client_address: address,
+    id: uid(), client_name: name, client_whatsapp: phone, ...addr,
     service_id: svc.id, service_name: svc.name, service_price: svc.price,
     appointment_date: p.p_date, start_time: slot.slot_start, end_time: slot.slot_end,
     status: 'pending', created_at: now, updated_at: now,

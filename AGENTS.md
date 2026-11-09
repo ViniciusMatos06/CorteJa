@@ -9,7 +9,7 @@
 
 Agendamento online para **um cabeleireiro que atende somente a domicílio** (cortes masculino, feminino e infantil).
 
-- **Cliente** (página pública `/`): escolhe serviço, data, horário e informa nome, WhatsApp e endereço. **Não tem conta nem login.** A solicitação nasce como *pendente* e já reserva o horário.
+- **Cliente** (página pública `/`): escolhe serviço, data, horário e informa nome, WhatsApp e endereço (em partes: ao digitar o CEP, rua, bairro, cidade e UF vêm do ViaCEP e ele completa número/complemento). **Não tem conta nem login.** A solicitação nasce como *pendente* e já reserva o horário.
 - **Cabeleireiro** (painel `/admin`, com login): aprova, recusa ou cancela agendamentos, configura expediente, intervalos, bloqueios e serviços, e conversa com o cliente pelo WhatsApp.
 
 Público: brasileiro, majoritariamente no celular, chegando por link de WhatsApp. **Toda a interface é em português do Brasil.**
@@ -68,6 +68,7 @@ src/
     supabase.ts       Cliente Supabase, isDemoMode, isSupabaseConfigured.
     errors.ts         toAppError(): traduz erros do Supabase em mensagens pt-BR.
     format.ts         Datas (sem fuso), moeda, telefone, link do WhatsApp.
+    address.ts        Endereço em partes: maskCep, lookupCep (ViaCEP, público e sem chave), formatAddress.
     validation.ts     Validação do formulário público.
   services/
     bookingService.ts Chamadas da página pública (apenas RPCs e leituras públicas).
@@ -80,7 +81,7 @@ src/
   components/
     ui/               Peças genéricas: Button, Card/SectionTitle, Input/Textarea/Select, Modal,
                       Alert/EmptyState, Spinner/PageLoader, MonthCalendar, StatusBadge, cn().
-    booking/          ServicePicker (com pictogramas), TimeSlotPicker, BookingTicket
+    booking/          ServicePicker (com pictogramas), TimeSlotPicker, AddressForm (CEP → endereço), BookingTicket
                       (+ MobileTicketBar), BookingSummary.
     admin/            AdminLayout (+ PageHeader), ProtectedRoute, AppointmentCard.
   pages/
@@ -112,7 +113,7 @@ docs/                 Tutoriais para humanos (Supabase e Vercel).
 | `services` | nome, descrição, preço, ativo, ordem | público lê ativos; admin tudo |
 | `breaks` | intervalos recorrentes; `weekday` nulo = todos os dias | admin |
 | `blocked_slots` | bloqueio por data; `start_time`/`end_time` nulos = dia inteiro | admin |
-| `appointments` | dados do cliente, serviço (nome e preço copiados no momento), data, início, fim, status | admin (só lê e muda `status`) |
+| `appointments` | dados do cliente (endereço em `address_cep`, `address_street`, `address_number`, `address_complement`, `address_neighborhood`, `address_city`, `address_state`; `client_address` é o texto completo montado por `request_appointment`, usado na exibição e no Maps; as partes são nulas em agendamentos antigos), serviço (nome e preço copiados no momento), data, início, fim, status | admin (só lê e muda `status`) |
 | `admin_users` | `user_id` de quem pode usar o painel | o próprio usuário lê sua linha |
 
 ### Status do agendamento
@@ -262,5 +263,6 @@ Depois rode `schema.sql` duas vezes (confere idempotência) e simule papéis com
 - Mesma duração para todos os serviços.
 - Grade fixa a partir do início do expediente; horário que cruza o almoço some.
 - Sem notificação automática ao cliente; confirmação manual via botão de WhatsApp.
+- Busca de CEP depende do ViaCEP; se ele falhar ou não achar o CEP, o cliente preenche os campos à mão (todos continuam editáveis). O banco valida formato do CEP e UF, mas não confere se o CEP existe.
 - Bloquear um dia não cancela agendamentos existentes nele.
 - Anti-spam simples: no máximo 3 solicitações pendentes futuras por número de WhatsApp (em `request_appointment`).

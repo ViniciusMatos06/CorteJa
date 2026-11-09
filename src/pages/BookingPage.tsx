@@ -3,7 +3,9 @@ import { Link } from 'react-router-dom'
 import { CheckCircle2, Home, LogIn, Scissors, ShieldCheck } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Card, SectionTitle } from '@/components/ui/Card'
-import { Input, Textarea } from '@/components/ui/Field'
+import { Input } from '@/components/ui/Field'
+import { AddressForm } from '@/components/booking/AddressForm'
+import { EMPTY_ADDRESS, formatAddress, type AddressFields } from '@/lib/address'
 import { Alert, EmptyState } from '@/components/ui/Alert'
 import { Modal } from '@/components/ui/Modal'
 import { PageLoader } from '@/components/ui/Spinner'
@@ -45,7 +47,7 @@ export default function BookingPage() {
   // ---- cliente
   const [name, setName] = useState('')
   const [whatsapp, setWhatsapp] = useState('')
-  const [address, setAddress] = useState('')
+  const [address, setAddress] = useState<AddressFields>(EMPTY_ADDRESS)
   const [fieldErrors, setFieldErrors] = useState<ClientErrors & { service?: string; date?: string; time?: string }>({})
 
   // ---- envio
@@ -112,7 +114,7 @@ export default function BookingPage() {
       buildSummary({
         name: name.trim(),
         whatsapp,
-        address: address.trim(),
+        address: formatAddress(address),
         service: service?.name ?? '',
         date: date ? formatDateLong(date) : '',
         time: time ? hhmm(time) : '',
@@ -130,7 +132,7 @@ export default function BookingPage() {
     e.preventDefault()
     setSubmitError(null)
     const errs = {
-      ...validateClient({ name, whatsapp, address }),
+      ...validateClient({ name, whatsapp, ...address }),
       ...(!serviceId && { service: 'Escolha um serviço.' }),
       ...(!date && { date: 'Escolha uma data.' }),
       ...(!time && { time: 'Escolha um horário.' }),
@@ -150,7 +152,7 @@ export default function BookingPage() {
     setSubmitError(null)
     try {
       await requestAppointment({
-        clientName: name, clientWhatsapp: whatsapp, clientAddress: address,
+        clientName: name, clientWhatsapp: whatsapp, address,
         serviceId, date, startTime: time,
       })
       setConfirmOpen(false)
@@ -186,7 +188,7 @@ export default function BookingPage() {
     price: service?.price != null ? formatCurrency(service.price) : undefined,
     date: date ? formatDateLong(date).replace(/ de \d{4}$/, '') : undefined,
     time: time ? hhmm(time) : undefined,
-    address: address.trim() || undefined,
+    address: shortAddress(address),
   }
 
   const topBar = (
@@ -343,18 +345,21 @@ export default function BookingPage() {
                     onChange={(e) => setWhatsapp(maskPhone(e.target.value))}
                     error={fieldErrors.whatsapp}
                   />
-                  <div className="sm:col-span-2">
-                    <Textarea
-                      label="Endereço do atendimento"
-                      autoComplete="street-address"
-                      placeholder="Rua, número, complemento, bairro e cidade"
+                  <fieldset className="sm:col-span-2">
+                    <legend className="mb-3 pt-2 font-display text-base font-semibold">Endereço do atendimento</legend>
+                    <AddressForm
                       value={address}
-                      maxLength={300}
-                      rows={3}
-                      onChange={(e) => setAddress(e.target.value)}
-                      error={fieldErrors.address}
+                      errors={fieldErrors}
+                      onChange={(patch) => {
+                        setAddress((a) => ({ ...a, ...patch }))
+                        setFieldErrors((e) => {
+                          const next = { ...e }
+                          for (const k of Object.keys(patch)) delete next[k as keyof AddressFields]
+                          return next
+                        })
+                      }}
                     />
-                  </div>
+                  </fieldset>
                 </div>
               </Card>
 
@@ -399,6 +404,12 @@ export default function BookingPage() {
       </Modal>
     </Shell>
   )
+}
+
+/** Versão curta para o ticket: "Rua X, 10 - Bairro". */
+function shortAddress(a: AddressFields) {
+  const line = [a.street.trim(), a.number.trim()].filter(Boolean).join(', ')
+  return [line, a.neighborhood.trim()].filter(Boolean).join(' - ') || undefined
 }
 
 function Shell({ children }: { children: React.ReactNode }) {

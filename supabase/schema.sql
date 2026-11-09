@@ -134,6 +134,25 @@ create table if not exists public.appointments (
 create index if not exists appointments_date_idx   on public.appointments (appointment_date);
 create index if not exists appointments_status_idx on public.appointments (status);
 
+-- Endereço em partes (preenchido a partir do CEP). client_address continua
+-- existindo como texto completo, montado por request_appointment, para exibição
+-- e link do mapa. As colunas são opcionais só por causa de agendamentos antigos,
+-- criados antes da divisão; request_appointment exige e valida todas.
+alter table public.appointments add column if not exists address_cep          text;
+alter table public.appointments add column if not exists address_street       text;
+alter table public.appointments add column if not exists address_number       text;
+alter table public.appointments add column if not exists address_complement   text;
+alter table public.appointments add column if not exists address_neighborhood text;
+alter table public.appointments add column if not exists address_city         text;
+alter table public.appointments add column if not exists address_state        text;
+
+alter table public.appointments drop constraint if exists appointments_address_cep_format;
+alter table public.appointments add constraint appointments_address_cep_format
+  check (address_cep is null or address_cep ~ '^[0-9]{8}$');
+alter table public.appointments drop constraint if exists appointments_address_state_format;
+alter table public.appointments add constraint appointments_address_state_format
+  check (address_state is null or address_state ~ '^[A-Z]{2}$');
+
 -- updated_at automático
 create or replace function public.touch_updated_at()
 returns trigger
@@ -256,13 +275,22 @@ $$;
 -- Solicitação de agendamento (único caminho público de escrita)
 -- Valida tudo no servidor e insere sempre com status "pending".
 -- -----------------------------------------------------------------------------
+-- Assinatura antiga (endereço em um único texto).
+drop function if exists public.request_appointment(text, text, text, uuid, date, time);
+
 create or replace function public.request_appointment(
-  p_client_name     text,
-  p_client_whatsapp text,
-  p_client_address  text,
-  p_service_id      uuid,
-  p_date            date,
-  p_start_time      time
+  p_client_name          text,
+  p_client_whatsapp      text,
+  p_address_cep          text,
+  p_address_street       text,
+  p_address_number       text,
+  p_address_complement   text,
+  p_address_neighborhood text,
+  p_address_city         text,
+  p_address_state        text,
+  p_service_id           uuid,
+  p_date                 date,
+  p_start_time           time
 )
 returns uuid
 language plpgsql
@@ -272,8 +300,15 @@ set search_path = public
 as $$
 declare
   v_name    text := regexp_replace(btrim(coalesce(p_client_name, '')), '\s+', ' ', 'g');
-  v_address text := btrim(coalesce(p_client_address, ''));
   v_phone   text := regexp_replace(coalesce(p_client_whatsapp, ''), '\D', '', 'g');
+  v_cep     text := regexp_replace(coalesce(p_address_cep, ''), '\D', '', 'g');
+  v_street  text := regexp_replace(btrim(coalesce(p_address_street, '')), '\s+', ' ', 'g');
+  v_number  text := regexp_replace(btrim(coalesce(p_address_number, '')), '\s+', ' ', 'g');
+  v_compl   text := nullif(regexp_replace(btrim(coalesce(p_address_complement, '')), '\s+', ' ', 'g'), '');
+  v_hood    text := regexp_replace(btrim(coalesce(p_address_neighborhood, '')), '\s+', ' ', 'g');
+  v_city    text := regexp_replace(btrim(coalesce(p_address_city, '')), '\s+', ' ', 'g');
+  v_state   text := upper(btrim(coalesce(p_address_state, '')));
+  v_address text;
   v_service public.services%rowtype;
   v_end     time;
   v_id      uuid;
@@ -289,9 +324,34 @@ begin
     raise exception 'Informe um WhatsApp válido com DDD.' using errcode = 'P0001';
   end if;
 
-  if char_length(v_address) < 8 or char_length(v_address) > 300 then
-    raise exception 'Informe o endereço completo do atendimento.' using errcode = 'P0001';
+  if v_cep !~ '^[0-9]{8}$' then
+    raise exception 'Informe um CEP válido com 8 números.' using errcode = 'P0001';
   end if;
+  if char_length(v_street) < 2 or char_length(v_street) > 150 then
+    raise exception 'Informe a rua do atendimento.' using errcode = 'P0001';
+  end if;
+  if char_length(v_number) < 1 or char_length(v_number) > 20 then
+    raise exception 'Informe o número (ou S/N).' using errcode = 'P0001';
+  end if;
+  if char_length(coalesce(v_compl, '')) > 80 then
+    raise exception 'Complemento muito longo.' using errcode = 'P0001';
+  end if;
+  if char_length(v_hood) < 2 or char_length(v_hood) > 80 then
+    raise exception 'Informe o bairro.' using errcode = 'P0001';
+  end if;
+  if char_length(v_city) < 2 or char_length(v_city) > 80 then
+    raise exception 'Informe a cidade.' using errcode = 'P0001';
+  end if;
+  if v_state not in ('AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA',
+                     'PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO') then
+    raise exception 'Informe um estado (UF) válido.' using errcode = 'P0001';
+  end if;
+
+  -- Texto completo; mesmo formato de formatAddress() em src/lib/address.ts.
+  v_address := v_street || ', ' || v_number
+    || coalesce(' - ' || v_compl, '')
+    || ' - ' || v_hood || ', ' || v_city || ' - ' || v_state
+    || ', CEP ' || substr(v_cep, 1, 5) || '-' || substr(v_cep, 6, 3);
 
   select * into v_service from public.services where id = p_service_id and active;
   if not found then
@@ -320,10 +380,14 @@ begin
 
   insert into public.appointments (
     client_name, client_whatsapp, client_address,
+    address_cep, address_street, address_number, address_complement,
+    address_neighborhood, address_city, address_state,
     service_id, service_name, service_price,
     appointment_date, start_time, end_time, status
   ) values (
     v_name, v_phone, v_address,
+    v_cep, v_street, v_number, v_compl,
+    v_hood, v_city, v_state,
     v_service.id, v_service.name, v_service.price,
     p_date, p_start_time, v_end, 'pending'
   )
@@ -403,10 +467,10 @@ revoke insert, update, delete on public.admin_users from authenticated;
 
 revoke execute on function public.get_available_slots(date)       from public;
 revoke execute on function public.get_available_dates(date, date) from public;
-revoke execute on function public.request_appointment(text, text, text, uuid, date, time) from public;
+revoke execute on function public.request_appointment(text, text, text, text, text, text, text, text, text, uuid, date, time) from public;
 revoke execute on function public.is_admin() from public;
 
 grant execute on function public.get_available_slots(date)       to anon, authenticated;
 grant execute on function public.get_available_dates(date, date) to anon, authenticated;
-grant execute on function public.request_appointment(text, text, text, uuid, date, time) to anon, authenticated;
+grant execute on function public.request_appointment(text, text, text, text, text, text, text, text, text, uuid, date, time) to anon, authenticated;
 grant execute on function public.is_admin() to authenticated;
