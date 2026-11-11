@@ -212,6 +212,11 @@ async function handle(url: URL, init: RequestInit = {}, headers: Headers): Promi
     if (!body?.email || !body?.password) return json({ error: 'invalid_grant', error_description: 'Invalid login credentials', msg: 'Invalid login credentials' }, 400)
     return json(session())
   }
+  if (path.startsWith('/auth/v1/signup')) {
+    // Na demo o cadastro entra direto (sem e-mail de confirmação).
+    if (!body?.email || !body?.password) return json({ code: 400, msg: 'Signup requires a valid password' }, 400)
+    return json(session())
+  }
   if (path.startsWith('/auth/v1/user')) return json(DEMO_USER)
   if (path.startsWith('/auth/v1/logout')) return json(undefined, 204)
 

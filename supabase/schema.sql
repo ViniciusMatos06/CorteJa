@@ -38,6 +38,57 @@ as $$
 $$;
 
 -- -----------------------------------------------------------------------------
+-- Cadastro do cabeleireiro (tela /admin/cadastro)
+-- Só e-mails listados em admin_allowlist conseguem criar conta no Supabase Auth
+-- (vale também para o botão "Add user" do painel do Supabase). Quando o e-mail
+-- é confirmado, o usuário entra em admin_users automaticamente.
+-- Preencha a lista com supabase/create_admin.sql.
+-- -----------------------------------------------------------------------------
+create table if not exists public.admin_allowlist (
+  email      text primary key check (email = lower(btrim(email))),
+  created_at timestamptz not null default now()
+);
+
+create or replace function public.guard_auth_signup()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not exists (select 1 from public.admin_allowlist where email = lower(btrim(new.email))) then
+    raise exception 'Este e-mail não tem permissão para criar conta.' using errcode = 'P0001';
+  end if;
+  return new;
+end $$;
+
+create or replace function public.grant_admin_on_confirm()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  -- Só depois de confirmar o e-mail: quem não tem acesso à caixa de entrada
+  -- não vira administrador, mesmo que se cadastre primeiro com o e-mail certo.
+  if new.email_confirmed_at is not null
+     and exists (select 1 from public.admin_allowlist where email = lower(btrim(new.email))) then
+    insert into public.admin_users (user_id) values (new.id) on conflict (user_id) do nothing;
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists guard_auth_signup on auth.users;
+create trigger guard_auth_signup
+  before insert on auth.users
+  for each row execute function public.guard_auth_signup();
+
+drop trigger if exists grant_admin_on_confirm on auth.users;
+create trigger grant_admin_on_confirm
+  after insert or update of email_confirmed_at on auth.users
+  for each row execute function public.grant_admin_on_confirm();
+
+-- -----------------------------------------------------------------------------
 -- Configurações de funcionamento (linha única, id = 1)
 -- work_days usa o padrão do PostgreSQL: 0 = domingo ... 6 = sábado
 -- -----------------------------------------------------------------------------
@@ -404,6 +455,7 @@ end $$;
 -- Row Level Security
 -- -----------------------------------------------------------------------------
 alter table public.admin_users       enable row level security;
+alter table public.admin_allowlist   enable row level security; -- sem policies: ninguém acessa pela API
 alter table public.business_settings enable row level security;
 alter table public.services          enable row level security;
 alter table public.breaks            enable row level security;
@@ -464,6 +516,9 @@ grant select on public.appointments to authenticated;
 grant update (status) on public.appointments to authenticated;
 
 revoke insert, update, delete on public.admin_users from authenticated;
+revoke all on public.admin_allowlist from anon, authenticated;
+revoke execute on function public.guard_auth_signup()      from public, anon, authenticated;
+revoke execute on function public.grant_admin_on_confirm() from public, anon, authenticated;
 
 revoke execute on function public.get_available_slots(date)       from public;
 revoke execute on function public.get_available_dates(date, date) from public;

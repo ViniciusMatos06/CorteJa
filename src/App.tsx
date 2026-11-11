@@ -10,6 +10,7 @@ import { PageLoader } from '@/components/ui/Spinner'
 
 // O painel é carregado sob demanda: clientes não baixam código administrativo.
 const LoginPage = lazy(() => import('@/pages/admin/LoginPage'))
+const SignupPage = lazy(() => import('@/pages/admin/SignupPage'))
 const DashboardPage = lazy(() => import('@/pages/admin/DashboardPage'))
 const AppointmentsPage = lazy(() => import('@/pages/admin/AppointmentsPage'))
 const SchedulePage = lazy(() => import('@/pages/admin/SchedulePage'))
@@ -27,6 +28,7 @@ export default function App() {
             <Routes>
               <Route path="/" element={<BookingPage />} />
               <Route path="/admin/login" element={<LoginPage />} />
+              <Route path="/admin/cadastro" element={<SignupPage />} />
               <Route path="/admin" element={<ProtectedRoute />}>
                 <Route element={<AdminLayout />}>
                   <Route index element={<DashboardPage />} />

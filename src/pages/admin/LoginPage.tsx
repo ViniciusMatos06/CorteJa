@@ -1,8 +1,8 @@
 import { useState, type FormEvent } from 'react'
-import { Navigate, useLocation } from 'react-router-dom'
+import { Link, Navigate, useLocation } from 'react-router-dom'
 import { Lock, Scissors } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
-import { signIn } from '@/services/adminService'
+import { BARBER_EMAIL, signIn } from '@/services/adminService'
 import { isDemoMode } from '@/lib/supabase'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Field'
@@ -54,11 +54,20 @@ export default function LoginPage() {
         </div>
         <form onSubmit={handleSubmit} className="space-y-4" noValidate>
           <Input label="E-mail" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          {!isDemoMode && (
+            <p className="-mt-2 text-xs text-fg-muted">
+              Acesso restrito ao e-mail {BARBER_EMAIL}.
+            </p>
+          )}
           <Input label="Senha" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
           {error && <Alert tone="error">{error}</Alert>}
           <Button type="submit" className="w-full" loading={submitting} icon={<Lock className="size-4" />}>
             Entrar
           </Button>
+          <p className="text-center text-sm text-fg-muted">
+            Primeiro acesso?{' '}
+            <Link to="/admin/cadastro" className="font-semibold text-brand-600 hover:underline">Criar conta</Link>
+          </p>
         </form>
       </Card>
     </div>

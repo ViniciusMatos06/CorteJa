@@ -57,7 +57,7 @@ Supabase
 ```
 supabase/
   schema.sql          Tabelas, RLS, grants, triggers e funções. IDEMPOTENTE: pode rodar de novo.
-  create_admin.sql    Insere o usuário do cabeleireiro em admin_users.
+  create_admin.sql    Autoriza o e-mail do cabeleireiro (admin_allowlist) e libera a conta, se já existir.
   seed_services.sql   (opcional) Serviços iniciais: masculino R$70, feminino R$80, infantil R$70.
 src/
   main.tsx            Inicialização; no modo demo instala o banco simulado antes de renderizar.
@@ -98,6 +98,7 @@ docs/                 Tutoriais para humanos (Supabase e Vercel).
 |---|---|---|
 | `/` | BookingPage | público |
 | `/admin/login` | LoginPage | público |
+| `/admin/cadastro` | SignupPage (criar a conta do cabeleireiro) | público, só e-mail autorizado |
 | `/admin` | DashboardPage | admin |
 | `/admin/agendamentos` | AppointmentsPage (lista ou calendário) | admin |
 | `/admin/agenda` | SchedulePage (expediente, intervalos, bloqueios) | admin |
@@ -115,6 +116,7 @@ docs/                 Tutoriais para humanos (Supabase e Vercel).
 | `blocked_slots` | bloqueio por data; `start_time`/`end_time` nulos = dia inteiro | admin |
 | `appointments` | dados do cliente (endereço em `address_cep`, `address_street`, `address_number`, `address_complement`, `address_neighborhood`, `address_city`, `address_state`; `client_address` é o texto completo montado por `request_appointment`, usado na exibição e no Maps; as partes são nulas em agendamentos antigos), serviço (nome e preço copiados no momento), data, início, fim, status | admin (só lê e muda `status`) |
 | `admin_users` | `user_id` de quem pode usar o painel | o próprio usuário lê sua linha |
+| `admin_allowlist` | e-mails que podem criar conta. Trigger `guard_auth_signup` recusa outros em `auth.users`; `grant_admin_on_confirm` põe o usuário em `admin_users` quando o e-mail é confirmado | ninguém pela API |
 
 ### Status do agendamento
 
@@ -156,7 +158,7 @@ A duração é **a mesma para todos os serviços** (`slot_minutes`).
 2. O visitante anônimo **não** lê nem escreve em `appointments`, `breaks`, `blocked_slots` ou `admin_users`. Não crie policies que abram isso.
 3. Toda escrita pública nova deve ser uma **função `SECURITY DEFINER` com `set search_path = public`** que valida tudo no servidor. Depois do `create function`, faça `revoke execute … from public` e `grant execute … to anon, authenticated`.
 4. O admin só pode alterar a coluna `status` de `appointments` (`grant update (status)`). Para liberar outra coluna, adicione-a explicitamente no grant e explique o motivo.
-5. Ter conta no Supabase Auth **não** dá acesso ao painel; quem decide é `admin_users` + `is_admin()`. Mantenha `using (public.is_admin())` nas policies de admin.
+5. Ter conta no Supabase Auth **não** dá acesso ao painel; quem decide é `admin_users` + `is_admin()`. A entrada automática em `admin_users` só acontece com e-mail **confirmado** e presente em `admin_allowlist` — não relaxe essa condição. Mantenha `using (public.is_admin())` nas policies de admin.
 6. Dados pessoais do cliente nunca aparecem em respostas de funções públicas.
 
 ## 7. Erros e mensagens
@@ -229,7 +231,7 @@ Supabase usa PostgreSQL; para testar sem a nuvem, crie um stub mínimo antes de 
 ```sql
 create role anon nologin; create role authenticated nologin;
 create schema auth;
-create table auth.users (id uuid primary key, email text);
+create table auth.users (id uuid primary key, email text, email_confirmed_at timestamptz);
 create function auth.uid() returns uuid language sql stable
   as $$ select nullif(current_setting('request.jwt.sub', true), '')::uuid $$;
 grant usage on schema auth, public to anon, authenticated;

@@ -1,6 +1,6 @@
 // Serviços do painel administrativo. Todas as consultas dependem de um
 // usuário autenticado presente em admin_users (garantido pelo RLS).
-import { supabase } from '@/lib/supabase'
+import { isDemoMode, supabase } from '@/lib/supabase'
 import { toAppError } from '@/lib/errors'
 import type {
   Appointment, AppointmentStatus, BlockedSlot, BreakRule, BusinessSettings, Service,
@@ -8,14 +8,53 @@ import type {
 
 // ---------------- Autenticação ----------------
 
+export const BARBER_EMAIL = 'marciojvi@gmail.com'
+
 export async function signIn(email: string, password: string) {
+  if (!isDemoMode && email.trim().toLowerCase() !== BARBER_EMAIL) {
+    throw new Error('Este e-mail não está autorizado a acessar o painel.')
+  }
+
   const { error } = await supabase.auth.signInWithPassword({ email, password })
   if (error) {
     throw toAppError(
       error,
-      error.message.includes('Invalid login') ? 'E-mail ou senha incorretos.' : 'Não foi possível entrar.',
+      error.message.includes('Invalid login')
+        ? 'E-mail ou senha incorretos.'
+        : error.message.toLowerCase().includes('not confirmed')
+          ? 'Confirme seu e-mail pelo link que enviamos antes de entrar.'
+          : 'Não foi possível entrar.',
     )
   }
+}
+
+/**
+ * Cria a conta do cabeleireiro. O banco recusa qualquer e-mail fora de
+ * admin_allowlist; a checagem aqui é só para dar resposta rápida.
+ * Retorna true quando é preciso confirmar o e-mail antes de entrar.
+ */
+export async function signUp(email: string, password: string): Promise<boolean> {
+  const normalized = email.trim().toLowerCase()
+  if (!isDemoMode && normalized !== BARBER_EMAIL) {
+    throw new Error('Este e-mail não tem permissão para criar conta.')
+  }
+
+  const { data, error } = await supabase.auth.signUp({
+    email: normalized,
+    password,
+    options: { emailRedirectTo: `${window.location.origin}/admin/login` },
+  })
+  if (error) {
+    const msg = error.message.toLowerCase()
+    if (msg.includes('already registered')) throw new Error('Já existe uma conta com este e-mail. Entre com sua senha.')
+    if (msg.includes('database error')) throw new Error('Este e-mail não tem permissão para criar conta.')
+    if (msg.includes('password')) throw new Error('Senha fraca. Use pelo menos 8 caracteres, misturando letras e números.')
+    if (msg.includes('signups not allowed') || msg.includes('signup is disabled')) {
+      throw new Error('O cadastro está desligado no Supabase. Ative-o para criar a conta.')
+    }
+    throw toAppError(error, 'Não foi possível criar a conta.')
+  }
+  return !data.session
 }
 
 export async function signOut() {
